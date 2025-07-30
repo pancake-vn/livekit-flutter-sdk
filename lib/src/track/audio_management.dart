@@ -23,12 +23,7 @@ import '../support/platform.dart';
 import 'local/local.dart';
 import 'remote/remote.dart';
 
-enum AudioTrackState {
-  none,
-  remoteOnly,
-  localOnly,
-  localAndRemote,
-}
+enum AudioTrackState { none, remoteOnly, localOnly, localAndRemote }
 
 typedef ConfigureNativeAudioFunc = Future<NativeAudioConfiguration> Function(AudioTrackState state);
 
@@ -99,8 +94,10 @@ mixin RemoteAudioManagementMixin on RemoteTrack, AudioTrack {
 }
 
 Future<void> _onAudioTrackCountDidChange() async {
-  logger.fine('onAudioTrackCountDidChange: '
-      'local: $_localTrackCount, remote: $_remoteTrackCount');
+  logger.fine(
+    'onAudioTrackCountDidChange: '
+    'local: $_localTrackCount, remote: $_remoteTrackCount',
+  );
 
   final newState = _computeAudioTrackState();
 
@@ -167,7 +164,15 @@ class NativeAudioManagement {
       if (Native.bypassVoiceProcessing) {
         await rtc.Helper.setAndroidAudioConfiguration(rtc.AndroidAudioConfiguration.media);
       } else {
-        await rtc.Helper.setAndroidAudioConfiguration(rtc.AndroidAudioConfiguration.communication);
+        final rtc.AndroidAudioConfiguration androidAudioConfig = rtc.AndroidAudioConfiguration(
+          manageAudioFocus: true,
+          androidAudioMode: rtc.AndroidAudioMode.inCommunication,
+          androidAudioFocusMode: rtc.AndroidAudioFocusMode.gainTransient,
+          androidAudioStreamType: rtc.AndroidAudioStreamType.voiceCall,
+          androidAudioAttributesUsageType: rtc.AndroidAudioAttributesUsageType.voiceCommunication,
+          androidAudioAttributesContentType: rtc.AndroidAudioAttributesContentType.speech,
+        );
+        await rtc.Helper.setAndroidAudioConfiguration(androidAudioConfig);
       }
     }
   }
