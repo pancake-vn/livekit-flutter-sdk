@@ -77,6 +77,9 @@ abstract class Participant<T extends TrackPublication> extends DisposableChangeN
   /// Connection quality between the [Participant] and the server.
   ConnectionQuality _connectionQuality = ConnectionQuality.unknown;
 
+  /// The raw score behind [_connectionQuality], null until the server sends one.
+  double? _connectionQualityScore;
+
   ParticipantPermissions _permissions = const ParticipantPermissions();
   ParticipantPermissions get permissions => _permissions;
 
@@ -111,6 +114,15 @@ abstract class Participant<T extends TrackPublication> extends DisposableChangeN
 
   /// Connection quality between the [Participant] and the Server.
   ConnectionQuality get connectionQuality => _connectionQuality;
+
+  /// The continuous score the server computed for this participant's connection,
+  /// which [connectionQuality] buckets into five values.
+  ///
+  /// Null when the server did not report one. Prefer this over
+  /// [connectionQuality] when you need resolution: the score moves while the
+  /// bucket holds steady, so a connection degrading within `good` is visible
+  /// here and nowhere else.
+  double? get connectionQualityScore => _connectionQualityScore;
 
   // Must be implemented by child class.
   List<T> get videoTrackPublications;
@@ -198,13 +210,18 @@ abstract class Participant<T extends TrackPublication> extends DisposableChangeN
     }
   }
 
+  /// Deduplicates on the score as well as the bucket. Comparing only the bucket
+  /// would swallow every update where the score moved but stayed inside the
+  /// same one, which is most of them.
   @internal
-  void updateConnectionQuality(ConnectionQuality quality) {
-    if (_connectionQuality == quality) return;
+  void updateConnectionQuality(ConnectionQuality quality, {double? score}) {
+    if (_connectionQuality == quality && _connectionQualityScore == score) return;
     _connectionQuality = quality;
+    _connectionQualityScore = score;
     [events, room.events].emit(ParticipantConnectionQualityUpdatedEvent(
       participant: this,
       connectionQuality: _connectionQuality,
+      score: _connectionQualityScore,
     ));
   }
 

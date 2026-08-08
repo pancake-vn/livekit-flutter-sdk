@@ -404,14 +404,20 @@ class ParticipantStateUpdatedEvent with RoomEvent, ParticipantEvent {
 class ParticipantConnectionQualityUpdatedEvent with RoomEvent, ParticipantEvent {
   final Participant participant;
   final ConnectionQuality connectionQuality;
+
+  /// The continuous score [connectionQuality] was bucketed from, as computed by
+  /// the server. Null when the server did not report one.
+  final double? score;
+
   const ParticipantConnectionQualityUpdatedEvent({
     required this.participant,
     required this.connectionQuality,
+    this.score,
   });
 
   @override
   String toString() => '${runtimeType}'
-      '(participant: ${participant}, connectionQuality: ${connectionQuality})';
+      '(participant: ${participant}, connectionQuality: ${connectionQuality}, score: ${score})';
 }
 
 /// Data received from  [RemoteParticipant].
