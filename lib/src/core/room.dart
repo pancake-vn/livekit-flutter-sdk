@@ -964,8 +964,12 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
       }
 
       if (participant != null) {
-        // update the connection quality if the participant is found
-        participant.updateConnectionQuality(entry.quality.toLKType());
+        // update the connection quality if the participant is found.
+        // hasScore() separates a server reporting no score from one reporting a genuine 0.0.
+        participant.updateConnectionQuality(
+          entry.quality.toLKType(),
+          score: entry.hasScore() ? entry.score : null,
+        );
       }
     }
   }
