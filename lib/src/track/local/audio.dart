@@ -90,10 +90,16 @@ class LocalAudioTrack extends LocalTrack with AudioTrack, LocalAudioManagementMi
       if (v.type == 'outbound-rtp') {
         senderStats ??= AudioSenderStats(v.id, v.timestamp);
         senderStats.packetsSent = getNumValFromReport(v.values, 'packetsSent');
-        senderStats.packetsLost = getNumValFromReport(v.values, 'packetsLost');
         senderStats.bytesSent = getNumValFromReport(v.values, 'bytesSent');
-        senderStats.roundTripTime = getNumValFromReport(v.values, 'roundTripTime');
-        senderStats.jitter = getNumValFromReport(v.values, 'jitter');
+
+        // locate the appropriate remote-inbound-rtp item
+        final remoteId = getStringValFromReport(v.values, 'remoteId');
+        final r = stats.firstWhereOrNull((element) => element.id == remoteId);
+        if (r != null) {
+          senderStats.jitter = getNumValFromReport(r.values, 'jitter');
+          senderStats.packetsLost = getNumValFromReport(r.values, 'packetsLost');
+          senderStats.roundTripTime = getNumValFromReport(r.values, 'roundTripTime');
+        }
 
         final c = stats.firstWhereOrNull((element) => element.type == 'codec');
         if (c != null) {
