@@ -323,13 +323,13 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
         await room.engine.setPreferredCodec(
           track.transceiver!,
           'video',
-          publishOptions.videoCodec,
+          publishOptions!.videoCodec,
         );
-        track.codec = publishOptions.videoCodec;
+        track.codec = publishOptions!.videoCodec;
       }
 
       if ([TrackSource.camera, TrackSource.screenShareVideo].contains(track.source)) {
-        final degradationPreference = publishOptions.degradationPreference ??
+        final degradationPreference = publishOptions!.degradationPreference ??
             getDefaultDegradationPreference(
               track,
             );
@@ -338,11 +338,11 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
 
       if (kIsWeb && lkBrowser() == BrowserType.firefox && track.kind == TrackType.AUDIO) {
         //TOOD:
-      } else if (isSVCCodec(publishOptions.videoCodec) && encodings?.first.maxBitrate != null) {
+      } else if (isSVCCodec(publishOptions!.videoCodec) && encodings?.first.maxBitrate != null) {
         room.engine.publisher?.setTrackBitrateInfo(TrackBitrateInfo(
             cid: track.getCid(),
             transceiver: track.transceiver,
-            codec: publishOptions.videoCodec,
+            codec: publishOptions!.videoCodec,
             maxbr: encodings![0].maxBitrate! ~/ 1000));
       }
 
