@@ -77,7 +77,11 @@ public:
         std::make_unique<AudioVisualizer>(bar_count_, is_centered_);
     ((libwebrtc::RTCAudioTrack *)media_track_.get())->AddSink(this);
   }
-  ~VisualizerSink() override {}
+  // Detaches before media_track_ drops what may be the track's last
+  // reference, so the track never outlives its sink registration.
+  ~VisualizerSink() override {
+    ((libwebrtc::RTCAudioTrack *)media_track_.get())->RemoveSink(this);
+  }
 
 public:
   void OnData(const void *audio_data, int bits_per_sample, int sample_rate,
@@ -117,10 +121,6 @@ public:
     } else {
       sink_->Success(event);
     }
-  }
-
-  void RemoveSink() {
-    ((libwebrtc::RTCAudioTrack *)media_track_.get())->RemoveSink(this);
   }
 
 private:
@@ -223,20 +223,15 @@ void LiveKitPlugin::HandleMethodCall(
     }
     flutter::EncodableMap args =
         GetValue<flutter::EncodableMap>(*method_call.arguments());
-    std::string trackId = findString(args, "trackId");
+    // The visualizer holds its own track reference, so it is erased by id
+    // alone: by the time Dart stops it the track is often already gone from
+    // flutter_webrtc, and bailing out then would leak the visualizer until
+    // plugin teardown, where releasing the track can deadlock.
     std::string visualizerId = findString(args, "visualizerId");
-
-    libwebrtc::scoped_refptr<libwebrtc::RTCMediaTrack> media_track =
-        webrtc_instance_->MediaTrackForId(trackId);
-    if (!media_track) {
-      result->Error("Track Not Found", "No media track found for the given ID");
-      return;
-    }
 
     mutex_.lock();
     auto it = visualizers_.find(visualizerId);
     if (it != visualizers_.end()) {
-      it->second->RemoveSink();
       visualizers_.erase(it);
       mutex_.unlock();
     } else {
