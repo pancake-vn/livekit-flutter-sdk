@@ -1,5 +1,168 @@
 # CHANGELOG
 
+## 2.13.0
+
+* Changed: Bump libwebrtc to m150(flutter-webrtc 1.6.2), added `enableWARP` and `zeroPlayoutDelay` options to LiveKitClient.initialize
+* Changed: Bump flutter-webrtc to 1.6.2+hotfix.1, fixed crash on Linux/Windows and fix resource leak by releasing event channel on Darwin
+* Changed: Bump flutter_webrtc to 1.6.2+hotfix.3
+* Fixed: Session migration (server `Leave{action: RESUME}`) now resumes the session instead of escalating to a full reconnect, so remote participants are no longer dropped and re-added
+* Fixed: Reconnect requests are no longer dropped when one attempt is already running, and a reason that requires a full reconnect is no longer lost when a later request replaces it
+* Fixed: A resume whose signal connection drops before it completes is retried instead of being reported as reconnected
+* Fixed: Fail over to other Cloud regions when the initial connection is rejected with 403
+
+## 2.12.0
+
+* Added: Add AudioSessionException for iOS audio session failures
+* Changed: Microphone permission and audio session failures now throw TrackCreateException / AudioSessionException instead of AudioProcessingException
+* Changed: Raise minimum supported versions to Flutter 3.38 / Dart 3.10, the floor for stable native assets support
+* Changed: Update json_annotation to 4.12 and regenerate serialization code with json_serializable 6.14
+* Fixed: BaseKeyProvider.create now honors the discardFrameWhenCryptorNotReady option instead of always using the default
+* Fixed: Pre-connect audio buffer returns to a reusable state when recording fails to start, instead of ignoring retries and leaking the agent timeout
+* Fixed: Subscriber data channel state events now report the subscriber channel state and correct reliability type, and no longer leak listeners
+* Fixed: CachingTokenSource.fetch now awaits its result, so errors surface and the in-flight entry is cleared correctly
+* Fixed: sendText declares the UTF-8 byte length in the stream header, fixing rejected text streams containing non-ASCII characters
+* Fixed: Android: a failed local recording pre-warm no longer aborts microphone capture with AudioProcessingException(applyFailed)
+* Fixed: iOS: the audio session is configured from engine state even before a policy is pushed (pre-connect audio, pre-join mic, playout-only), fixing audio engine error -9001
+* Fixed: iOS/macOS: request microphone permission before audio capture starts, failing fast with TrackCreateException while the app is not in the foreground
+* Fixed: Fix use-after-free crash in TaskRunnerLinux::EnqueueTask when the runner is destroyed before the main loop dispatches a queued task
+
+## 2.11.0
+
+* Added: New DisconnectReason members for newer server disconnect reasons, previously reported as unknown
+* Added: Add DevelopmentTokenSource, the new name for the now-deprecated SandboxTokenSource
+* Changed: Default video degradation preference is now based on the track source (camera maintains framerate, screen share maintains resolution, others balanced) and is applied to the backup codec's sender as well
+* Changed: Update generated protocol definitions to v1.50.4
+* Changed: Unrecognized protobuf enum values from newer servers now fall back to safe defaults, for example a new DisconnectReason maps to unknown
+* Changed: Update dependencies: device_info_plus to 13.x, connectivity_plus 7.3.1, dart_webrtc 1.8.1, synchronized 3.4.1, uuid 4.6.0
+* Changed: Modernize the example app with a redesigned connect page, connection history, room header, focus layout, and an in-room messages panel
+* Fixed: Room.connect no longer ignores the roomOptions argument passed to it
+* Fixed: Room.getSid() now resolves when the room sid is issued after the join response
+* Fixed: Backup codec state is cleared on unpublish and full reconnect, so republishing no longer acts on senders from a torn down connection
+* Fixed: DegradationPreference.disabled now maps to maintainFramerateAndResolution, as WebRTC defines it
+
+## 2.10.0
+
+* Added: Swift Package Manager support for iOS and macOS. CocoaPods remains fully supported.
+* Added: Add ScreenSelectDialog.show and Hardware.requestCapturePermission so apps can start screen share without importing flutter_webrtc
+* Fixed: Omit data stream totalLength when size is unknown
+* Fixed: Fix compile errors on Dart 3.13 where nullable publish options are no longer promoted across await
+* Fixed: Harden the example RPC tester
+
+## 2.9.0
+
+* Added: Add native certificate pinning for SDK-owned connections
+* Added: Add RPC v2 (data-stream-based payloads) with v1 fallback
+* Added: Audio engine availability and externalCallSystem mode for CallKit
+* Added: AudioManager audio session options with engine-driven native lifecycle and platform routing controls
+* Added: Add ConnectionCheck utility for diagnosing connection issues (port of the client-sdk-js connection helper)
+* Added: Audio frame capture on Linux/Windows
+* Added: Microphone mute mode control on iOS/macOS
+* Added: Runtime audio processing controls for local audio tracks
+* Added: Widget Placeholder added for VideoTrackRenderer
+* Changed: Default VideoTrackRenderer renderMode to auto, which currently resolves to texture rendering
+* Fixed: Apply Android media audio attributes during WebRTC initialization
+* Fixed: Use initialization audio options as the default Android session policy
+* Fixed: Avoid sticky Android speaker routing when updating route preference
+* Fixed: Clean up local audio tracks when recording start fails
+* Fixed: Throw platformUnavailable when runtime audio processing is unsupported
+* Fixed: Apply create-time audio processing when local recording is prepared
+* Fixed: Remove non-public buttonPressed: selector from broadcast picker activation
+* Fixed: Allow selectAudioOutput on Android
+* Fixed: Support platform video rendering on macOS
+* Fixed: Emit a single disconnected event when connecting fails
+* Fixed: Handle switching video render modes without stale renderers
+* Docs: Add AGENTS.md with agent/contributor guidelines
+
+## 2.8.1
+
+* Added: Add agent deployment targeting to token source options
+* Fixed: Android plugin compatibility with AGP 9 built-in Kotlin
+* Fixed: Use maintain-resolution as the default video degradation preference for local video publishing
+
+## 2.8.0
+
+* Added: Session API support for simpler E2EE setup
+* Changed: Manual video quality selection can be used with adaptive stream enabled
+* Changed: Generated protocol definitions for LiveKit protocol v1.45.8
+* Fixed: waitForBufferStatusLow busy-waiting after engine close
+* Fixed: Simulcast lower layers exceeding the top layer
+* Fixed: forceRelay log message interpolation
+* Fixed: sendSyncState error handling so sync-state preparation failures are not swallowed
+* Fixed: Screen share simulcast default low layer alignment
+* Fixed: Region failover null-provider dereference
+* Fixed: Android builds with dependencies that require compileSdk 36
+* Fixed: Deferred track listener leaks across reconnects
+* Fixed: Adaptive stream dimensions on high-density displays
+* Fixed: Session.start() reentrancy during concurrent calls
+* Fixed: Connected server address resolving from the wrong peer connection
+* Fixed: Reconnect counter null assertion on the first reconnect attempt
+* Fixed: Premature publication disposal during unpublish
+
+## 2.7.0
+
+* Added: Add setVideoDimensions for remote track publications
+* Added: Add audio renderer API for receiving raw audio frames
+* Changed: Bump flutter-webrtc to 1.4.0 and upgrade to libwebrtc m144
+* Fixed: Add signal RTT tracking via pingReq/pongResp
+* Fixed: Add jitter to reconnect retry delays
+* Fixed: Fix missing params in CameraCaptureOptions.copyWith
+* Fixed: Fix missing RoomReconnectedEvent and incorrect SyncState timing during signal-only reconnection
+* Fixed: Fix VP9/SVC dynacast layer handling
+* Fixed: Stop processor on track end
+* Fixed: Include last server offer in SyncState during reconnection
+
+## 2.6.5
+
+* Added: Send reconnect reason to server during WebSocket reconnection
+* Fixed: setProcessor() now uses VideoProcessorOptions for video tracks instead of AudioProcessorOptions
+* Fixed: Fix wildcard variable lint warnings to improve pub.dev score
+* Fixed: Preserve Bluetooth and AirPlay options when forcing speaker output on iOS
+* Fixed: MissingPluginException when stopping audio visualizer on Android/iOS
+* Fixed: Fix microphone stopping after pre-connect audio completes
+* Fixed: Duplicate tracks published when setCameraEnabled called rapidly
+
+## 2.6.4
+
+* Added: Add web support for pre-connect audio buffer
+* Fixed: Remove duplicate sendLeave
+* Fixed: Fix setVideoInputDevice not switching camera
+* Fixed: Web pre-connect audio buffer using wrong sample rate
+* Fixed: Fix iOS audio renderer resource leak and remove Android 32-bit dead code
+* Fixed: Fix web audio capture not starting on Safari due to suspended AudioContext
+* Performance: Send raw PCM bytes in audio renderer instead of boxed int arrays
+
+## 2.6.3
+
+* Fixed: Fix publisher connection causing redundant renegotiations on lower-end devices
+* Fixed: Use explicit show clauses for foundation imports
+* Fixed: Fix concurrent modification on collection iteration during async operations
+* Fixed: Fix crash when writing to closed data stream controllers
+* Fixed: Fix region URL provider cache using wrong time unit and wrong field check for regions in leave event
+* Chore: Update protobuf to v1.44.0
+
+## 2.6.2
+
+* Added: Bitrate priority control APIs
+* Fixed: Windows: stop camera after unpublishing video track
+* Fixed: Keep mute state in sync with server
+* Fixed: Fix example prejoin device dropdown handling
+* Chore: Mark LocalVideoTrack constructor as internal for consistency with LocalAudioTrack
+* Chore: Update protobuf dependency to v6.0.0
+* Chore: Skip iOS platform download in CI
+
+## 2.6.1
+
+* Fixed: Enable E2EE for VP9 codec
+* Fixed: Correct spelling in E2EE log and error messages
+* Fixed: Ensure all dispose functions are executed even if one throws
+* Fixed: Fix microphone label typo in example app prejoin audio settings
+* Docs: Fix typos and inconsistencies in README and CHANGELOG
+
+## 2.6.0
+
+* Session API
+* Allow customizing screen share dialog labels for localization
+
 ## 2.5.4
 
 * Added pre-connect audio buffering
@@ -57,7 +220,7 @@
 * fix: memory leak visualizer stop android (#831)
 * fix: ensure engine always has correct device id if switching camera fails (#820)
 * fix: Always emit RoomDisconnectedEvent when the reason is clientInitiated. (#821)
-* fix: sif frame enqueing with e2ee (#822)
+* fix: sif frame enqueuing with e2ee (#822)
 * fix: update camera `deviceId` when track is null (#814)
 * feat: Audio Visualizer for Windows/Linux. (#739)
 

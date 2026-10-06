@@ -1,4 +1,5 @@
 #!/usr/bin/env dart
+
 /*
  * Copyright 2025 LiveKit
  *
@@ -23,7 +24,7 @@ import 'dart:io';
 ///
 /// Where:
 /// - level: One of [patch, minor, major] indicating the version bump level
-/// - kind: One of [added, changed, fixed] indicating the type of change
+/// - kind: One of [added, changed, fixed, refactor, performance, security, deprecated, removed, docs]
 /// - description: A detailed description of the change
 ///
 /// Examples:
@@ -46,6 +47,7 @@ class _Path {
   static const version = '.version';
   static const changelog = 'CHANGELOG.md';
   static const pubspec = 'pubspec.yaml';
+  static const readme = 'README.md';
   static const livekitVersion = 'lib/src/livekit.dart';
   static const iosPodspec = 'ios/livekit_client.podspec';
   static const macosPodspec = 'macos/livekit_client.podspec';
@@ -60,8 +62,14 @@ class _Color {
 
 enum ChangeKind {
   added,
+  changed,
   fixed,
-  changed;
+  refactor,
+  performance,
+  security,
+  deprecated,
+  removed,
+  docs;
 
   static ChangeKind? fromString(String value) {
     return ChangeKind.values.where((e) => e.name == value).firstOrNull;
@@ -96,6 +104,10 @@ class Change {
   });
 }
 
+String _allowedChangeKinds() => ChangeKind.values.map((e) => e.name).join(', ');
+
+String _allowedChangeLevels() => ChangeLevel.values.map((e) => e.name).join(', ');
+
 class SemanticVersion {
   final int major;
   final int minor;
@@ -108,15 +120,15 @@ class SemanticVersion {
   });
 
   factory SemanticVersion.parse(String versionString) {
-    final parts = versionString.split('.');
-    if (parts.length != 3) {
+    final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)(?:[+-].*)?$').firstMatch(versionString);
+    if (match == null) {
       throw FormatException('Invalid version format: $versionString');
     }
 
     return SemanticVersion(
-      major: int.parse(parts[0]),
-      minor: int.parse(parts[1]),
-      patch: int.parse(parts[2]),
+      major: int.parse(match.group(1)!),
+      minor: int.parse(match.group(2)!),
+      patch: int.parse(match.group(3)!),
     );
   }
 
@@ -147,37 +159,53 @@ List<Change> parseChanges() {
   }
 
   final changes = <Change>[];
+  final errors = <String>[];
   final files = changesDir.listSync().whereType<File>().where((f) => !f.path.split('/').last.startsWith('.'));
 
   for (final file in files) {
     final content = file.readAsStringSync();
     final lines = content.split('\n');
 
-    for (final line in lines) {
+    for (var i = 0; i < lines.length; i++) {
+      final rawLine = lines[i];
+      final line = rawLine.trim();
+      final location = '${file.path}:${i + 1}';
+
       // Skip empty lines
-      if (line.trim().isEmpty) continue;
+      if (line.isEmpty) continue;
 
       // Parse format: level type="kind" "description"
-      final parts = line.split(RegExp(r'\s+'));
-      if (parts.length < 3) continue;
+      final match = RegExp(r'^(\w+)\s+type="([^"]+)"\s+"([^"]+)"$').firstMatch(line);
+      if (match == null) {
+        errors.add('$location: expected `level type="kind" "description"`, found `$rawLine`');
+        continue;
+      }
 
       // Extract level
-      final level = ChangeLevel.fromString(parts[0]);
-      if (level == null) continue;
+      final levelName = match.group(1)!;
+      final level = ChangeLevel.fromString(levelName);
+      if (level == null) {
+        errors.add('$location: unsupported level `$levelName`; expected one of: ${_allowedChangeLevels()}');
+        continue;
+      }
 
       // Extract type from type="kind" format
-      final typeMatch = RegExp(r'type="(\w+)"').firstMatch(parts[1]);
-      if (typeMatch == null) continue;
-      final kind = ChangeKind.fromString(typeMatch.group(1)!);
-      if (kind == null) continue;
+      final kindName = match.group(2)!;
+      final kind = ChangeKind.fromString(kindName);
+      if (kind == null) {
+        errors.add('$location: unsupported type `$kindName`; expected one of: ${_allowedChangeKinds()}');
+        continue;
+      }
 
       // Extract description from the last quoted string
-      final descMatch = RegExp(r'"([^"]+)"$').firstMatch(line);
-      if (descMatch == null) continue;
-      final description = descMatch.group(1)!;
+      final description = match.group(3)!;
 
       changes.add(Change(level: level, kind: kind, description: description));
     }
+  }
+
+  if (errors.isNotEmpty) {
+    throw Exception('Invalid change entries:\n${errors.map((e) => '  - $e').join('\n')}');
   }
 
   if (changes.isEmpty) {
@@ -202,13 +230,22 @@ String generateChangelogEntry(SemanticVersion version, List<Change> changes) {
   buffer.writeln('## $version');
   buffer.writeln();
 
-  // Group changes by kind
-  final added = changes.where((c) => c.kind == ChangeKind.added).toList();
-  final changed = changes.where((c) => c.kind == ChangeKind.changed).toList();
-  final fixed = changes.where((c) => c.kind == ChangeKind.fixed).toList();
+  String prefixFor(ChangeKind kind) => switch (kind) {
+    ChangeKind.added => 'Added',
+    ChangeKind.changed => 'Changed',
+    ChangeKind.fixed => 'Fixed',
+    ChangeKind.refactor => 'Refactor',
+    ChangeKind.performance => 'Performance',
+    ChangeKind.security => 'Security',
+    ChangeKind.deprecated => 'Deprecated',
+    ChangeKind.removed => 'Removed',
+    ChangeKind.docs => 'Docs',
+  };
 
-  for (final change in [...added, ...changed, ...fixed]) {
-    buffer.writeln('* ${change.description}');
+  for (final kind in ChangeKind.values) {
+    for (final change in changes.where((c) => c.kind == kind)) {
+      buffer.writeln('* ${prefixFor(change.kind)}: ${change.description}');
+    }
   }
 
   buffer.writeln();
@@ -269,6 +306,13 @@ void updateVersionFiles(SemanticVersion version) {
     _Path.macosPodspec,
     RegExp(r"s\.version\s*=\s*'[^']*'"),
     "s.version             = '$version'",
+  );
+
+  // Update README.md installation snippet
+  replaceVersionInFile(
+    _Path.readme,
+    RegExp(r'^\s*livekit_client:\s+.*$', multiLine: true),
+    '  livekit_client: ^$version',
   );
 }
 
