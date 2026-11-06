@@ -63,6 +63,16 @@ internal class LKAudioSwitchManager(private val context: Context) {
   private var speakerOutputPreferred = true
   private var speakerOutputForced = false
 
+  /** The device picked with [selectDevice], applied once a session starts if none runs yet. */
+  private var requestedDevice: AudioDeviceRef? = null
+
+  /**
+   * Told on the [AudioSwitch] thread whenever the devices or the selected one
+   * change, and with no devices once the session stops.
+   */
+  @Volatile
+  var onDevicesChanged: ((List<AudioDevice>, AudioDevice?) -> Unit)? = null
+
   /**
    * Apply an audio session configuration. Unspecified keys keep their current
    * value. When the session is already active, changes that only take effect at
@@ -122,17 +132,52 @@ internal class LKAudioSwitchManager(private val context: Context) {
         applySpeakerRouting(switch, speakerRouting)
         isActive = true
       }
+      requestedDevice?.let { applyRequestedDevice(switch, it) }
     }
   }
 
   /** Deactivate and tear down the audio session: release focus and restore the previous mode. */
   @Synchronized
   fun stop() {
+    requestedDevice = null
     handler.post {
       audioSwitch?.stop()
       audioSwitch = null
       isActive = false
+      onDevicesChanged?.invoke(emptyList(), null)
     }
+  }
+
+  /**
+   * Hands [callback] the devices on offer and the selected one, on the
+   * [AudioSwitch] thread. None while no session runs.
+   */
+  fun audioDevices(callback: (List<AudioDevice>, AudioDevice?) -> Unit) {
+    handler.post {
+      val switch = audioSwitch
+      callback(switch?.availableAudioDevices ?: emptyList(), switch?.selectedAudioDevice)
+    }
+  }
+
+  /**
+   * Routes the session to the device of [type] (and [name], for a Bluetooth
+   * headset). The pick holds while the device stays connected, over the
+   * speaker preference; a pick made before the session starts is applied as
+   * it does. A session stopping forgets it.
+   */
+  @Synchronized
+  fun selectDevice(type: String, name: String?) {
+    val device = AudioDeviceRef(type, name)
+    requestedDevice = device
+    handler.post {
+      val switch = audioSwitch ?: return@post
+      applyRequestedDevice(switch, device)
+    }
+  }
+
+  private fun applyRequestedDevice(switch: AbstractAudioSwitch, device: AudioDeviceRef) {
+    val match = switch.availableAudioDevices.firstOrNull { device.matches(it) } ?: return
+    switch.selectDevice(match)
   }
 
   /** Final cleanup when the plugin detaches. The manager must not be used after this. */
@@ -180,7 +225,7 @@ internal class LKAudioSwitchManager(private val context: Context) {
         LegacyAudioSwitch(context, false, focusListener, speakerRouting.preferredDeviceList)
     }
     applyConfiguration(switch, sessionConfig)
-    switch.start { _, _ -> }
+    switch.start { devices, selected -> onDevicesChanged?.invoke(devices, selected) }
     return switch
   }
 
@@ -249,6 +294,37 @@ internal class LKAudioSwitchManager(private val context: Context) {
   private data class SpeakerRouting(
     val preferredDeviceList: List<Class<out AudioDevice>>,
   )
+
+  /** A device as Dart names it: its [type] and, for a Bluetooth headset, its [name]. */
+  private data class AudioDeviceRef(val type: String, val name: String?) {
+    fun matches(device: AudioDevice) =
+      audioDeviceTypeName(device) == type && (device !is AudioDevice.BluetoothHeadset || name == null || device.name == name)
+  }
+}
+
+/** The Dart-side name of [device]'s type. */
+internal fun audioDeviceTypeName(device: AudioDevice): String = when (device) {
+  is AudioDevice.Earpiece -> "earpiece"
+  is AudioDevice.Speakerphone -> "speakerphone"
+  is AudioDevice.WiredHeadset -> "wiredHeadset"
+  is AudioDevice.BluetoothHeadset -> "bluetoothHeadset"
+}
+
+/** [devices] and [selected] as the Dart side reads them. */
+internal fun encodeAudioDevices(devices: List<AudioDevice>, selected: AudioDevice?): Map<String, Any?> {
+  fun encode(device: AudioDevice) =
+    mapOf("type" to audioDeviceTypeName(device), "name" to device.name, "label" to audioDeviceLabel(device))
+  return mapOf("devices" to devices.map(::encode), "selected" to selected?.let(::encode))
+}
+
+/**
+ * The name to show for [device]: a Bluetooth headset's own, or null. Some
+ * devices report the phone's model as a headset's product name, which names
+ * nothing.
+ */
+private fun audioDeviceLabel(device: AudioDevice): String? = when (device) {
+  is AudioDevice.BluetoothHeadset -> device.name.takeUnless { it.isBlank() || it == Build.MODEL }
+  else -> null
 }
 
 // Map the Flutter-side enum names (see android_audio_session_adapter.dart) to

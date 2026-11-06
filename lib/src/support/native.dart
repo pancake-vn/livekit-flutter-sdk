@@ -204,6 +204,24 @@ class Native {
     }
   }
 
+  /// The devices LiveKit's Android audio session offers, as the native side
+  /// encodes them. Null when the call fails.
+  @internal
+  static Future<Map<Object?, Object?>?> getAndroidAudioDevices() async {
+    try {
+      return await channel.invokeMethod<Map<Object?, Object?>>('getAndroidAudioDevices');
+    } catch (error) {
+      logger.warning('getAndroidAudioDevices did throw $error');
+      return null;
+    }
+  }
+
+  /// Routes LiveKit's Android audio session to the device of [type], and
+  /// [name] for a Bluetooth headset.
+  @internal
+  static Future<void> selectAndroidAudioDevice(String type, {String? name}) =>
+      channel.invokeMethod<void>('selectAndroidAudioDevice', <String, dynamic>{'type': type, 'name': name});
+
   /// Route Android audio output to/from the speakerphone.
   @internal
   static Future<void> setAndroidSpeakerphoneOn(bool enable, {bool force = false}) async {
