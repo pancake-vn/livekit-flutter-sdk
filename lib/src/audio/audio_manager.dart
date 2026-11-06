@@ -14,13 +14,14 @@
 
 import 'dart:async';
 
-import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/services.dart' show EventChannel, PlatformException;
 
 import 'package:meta/meta.dart';
 
 import '../logger.dart';
 import '../support/native.dart';
 import '../support/platform.dart';
+import 'android_audio_device.dart';
 import 'android_audio_session_adapter.dart';
 import 'audio_engine_availability.dart';
 import 'audio_engine_error.dart';
@@ -98,6 +99,38 @@ class AudioManager {
 
   /// Whether the platform supports switching the speaker output (iOS/Android).
   bool get canSwitchSpeakerphone => lkPlatformIsMobile();
+
+  /// One stream for every listener: the native side has a single sink.
+  late final Stream<AndroidAudioDevices> _androidAudioDevices = lkPlatformIs(PlatformType.android)
+      ? const EventChannel('livekit_client/android_audio_devices')
+            .receiveBroadcastStream()
+            .map((event) => event is Map<Object?, Object?> ? AndroidAudioDevices.fromMap(event) : AndroidAudioDevices.none)
+            .asBroadcastStream()
+      : const Stream.empty();
+
+  /// The devices LiveKit's Android audio session offers and the one it routes
+  /// to, each time either changes. Empty once the session stops.
+  ///
+  /// Android only: never fires elsewhere.
+  Stream<AndroidAudioDevices> get androidAudioDevicesStream => _androidAudioDevices;
+
+  /// The devices LiveKit's Android audio session offers now, and the one it
+  /// routes to. Empty while no session runs, and on other platforms.
+  Future<AndroidAudioDevices> getAndroidAudioDevices() async {
+    if (!lkPlatformIs(PlatformType.android)) return AndroidAudioDevices.none;
+    final raw = await Native.getAndroidAudioDevices();
+    return raw == null ? AndroidAudioDevices.none : AndroidAudioDevices.fromMap(raw);
+  }
+
+  /// Routes the Android audio session to [device], microphone included.
+  ///
+  /// The pick holds while the device stays connected, over
+  /// [setSpeakerOutputPreferred]. Made before a session starts, it applies as
+  /// the session does; a session stopping forgets it. Android only.
+  Future<void> selectAndroidAudioDevice(AndroidAudioDevice device) async {
+    if (!lkPlatformIs(PlatformType.android)) return;
+    await Native.selectAndroidAudioDevice(device.type.name, name: device.name);
+  }
 
   /// The current audio engine state, derived from native engine lifecycle
   /// events (iOS/macOS). On platforms without engine events this stays idle.

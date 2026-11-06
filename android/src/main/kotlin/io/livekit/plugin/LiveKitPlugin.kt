@@ -32,6 +32,7 @@ import com.cloudwebrtc.webrtc.FlutterWebRTCPlugin
 import com.cloudwebrtc.webrtc.audio.AudioSwitchManager
 import com.cloudwebrtc.webrtc.audio.LocalAudioTrack
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.EventChannel
 import org.webrtc.AudioTrack
 import org.webrtc.audio.AudioProcessingComponentOptions
 import org.webrtc.audio.AudioProcessingComponentState
@@ -52,6 +53,8 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
   private var audioSwitchManager: LKAudioSwitchManager? = null
   private var audioDeviceModuleExecutor: ExecutorService? = null
   private val mainHandler = Handler(Looper.getMainLooper())
+  private var audioDevicesChannel: EventChannel? = null
+  private var audioDevicesSink: EventChannel.EventSink? = null
 
   /// The MethodChannel that will the communication between Flutter and native Android
   ///
@@ -66,7 +69,23 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "livekit_client")
     channel.setMethodCallHandler(this)
     binaryMessenger = flutterPluginBinding.binaryMessenger
-    audioSwitchManager = LKAudioSwitchManager(flutterPluginBinding.applicationContext)
+    audioSwitchManager = LKAudioSwitchManager(flutterPluginBinding.applicationContext).also { manager ->
+      manager.onDevicesChanged = { devices, selected ->
+        val event = encodeAudioDevices(devices, selected)
+        mainHandler.post { audioDevicesSink?.success(event) }
+      }
+    }
+    audioDevicesChannel = EventChannel(flutterPluginBinding.binaryMessenger, "livekit_client/android_audio_devices").also {
+      it.setStreamHandler(object : EventChannel.StreamHandler {
+        override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+          audioDevicesSink = events
+        }
+
+        override fun onCancel(arguments: Any?) {
+          audioDevicesSink = null
+        }
+      })
+    }
     audioDeviceModuleExecutor?.shutdown()
     audioDeviceModuleExecutor = Executors.newSingleThreadExecutor()
   }
@@ -471,6 +490,21 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
         result.success(null)
       }
 
+      "getAndroidAudioDevices" -> {
+        val manager = audioSwitchManager ?: return result.success(encodeAudioDevices(emptyList(), null))
+        manager.audioDevices { devices, selected ->
+          val reading = encodeAudioDevices(devices, selected)
+          mainHandler.post { result.success(reading) }
+        }
+      }
+
+      "selectAndroidAudioDevice" -> {
+        val type = call.argument<String>("type")
+          ?: return result.error("invalidArguments", "selectAndroidAudioDevice needs a type", null)
+        audioSwitchManager?.selectDevice(type, call.argument<String>("name"))
+        result.success(null)
+      }
+
       else -> {
         result.notImplemented()
       }
@@ -479,7 +513,11 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+    audioDevicesChannel?.setStreamHandler(null)
+    audioDevicesChannel = null
+    audioDevicesSink = null
 
+    audioSwitchManager?.onDevicesChanged = null
     audioSwitchManager?.dispose()
     audioSwitchManager = null
 
