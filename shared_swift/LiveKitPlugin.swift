@@ -1218,11 +1218,17 @@ class LKAudioEngineObserver: NSObject, RTCAudioDeviceModuleDelegate {
         return resultCode
     }
 
+    func audioDeviceModule(_: RTCAudioDeviceModule, willReleaseEngine engine: AVAudioEngine) -> Int {
+        #if os(macOS)
+        RetiredAudioEngines.hold(engine)
+        #endif
+        return 0
+    }
+
     // Remaining callbacks are not needed for session management (proceed / no-op).
     func audioDeviceModule(_: RTCAudioDeviceModule, didCreateEngine _: AVAudioEngine) -> Int { 0 }
     func audioDeviceModule(_: RTCAudioDeviceModule, willStartEngine _: AVAudioEngine, isPlayoutEnabled _: Bool, isRecordingEnabled _: Bool) -> Int { 0 }
     func audioDeviceModule(_: RTCAudioDeviceModule, didStopEngine _: AVAudioEngine, isPlayoutEnabled _: Bool, isRecordingEnabled _: Bool) -> Int { 0 }
-    func audioDeviceModule(_: RTCAudioDeviceModule, willReleaseEngine _: AVAudioEngine) -> Int { 0 }
     func audioDeviceModule(_: RTCAudioDeviceModule, engine _: AVAudioEngine, configureInputFromSource _: AVAudioNode?, toDestination _: AVAudioNode, format _: AVAudioFormat, context _: [AnyHashable: Any]) -> Int { 0 }
     func audioDeviceModule(_: RTCAudioDeviceModule, engine _: AVAudioEngine, configureOutputFromSource _: AVAudioNode, toDestination _: AVAudioNode?, format _: AVAudioFormat, context _: [AnyHashable: Any]) -> Int { 0 }
     func audioDeviceModule(_: RTCAudioDeviceModule, didReceiveSpeechActivityEvent _: RTCSpeechActivityEvent) {}
@@ -1243,3 +1249,17 @@ class LKAudioEngineObserver: NSObject, RTCAudioDeviceModuleDelegate {
         }
     }
 }
+
+#if os(macOS)
+/// AVFAudio keeps delivering device-change blocks to a released engine for seconds,
+/// and freeing it under one crashes in `AVAudioIOUnit::IOUnitPropertyListener`.
+private enum RetiredAudioEngines {
+    private static let queue = DispatchQueue(label: "io.livekit.retired-audio-engines", qos: .utility)
+
+    static func hold(_ engine: AVAudioEngine) {
+        queue.asyncAfter(deadline: .now() + .seconds(10)) {
+            withExtendedLifetime(engine) {}
+        }
+    }
+}
+#endif
