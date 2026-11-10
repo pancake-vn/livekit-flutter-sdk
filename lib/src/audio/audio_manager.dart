@@ -104,7 +104,9 @@ class AudioManager {
   late final Stream<AndroidAudioDevices> _androidAudioDevices = lkPlatformIs(PlatformType.android)
       ? const EventChannel('livekit_client/android_audio_devices')
             .receiveBroadcastStream()
-            .map((event) => event is Map<Object?, Object?> ? AndroidAudioDevices.fromMap(event) : AndroidAudioDevices.none)
+            .map(
+              (event) => event is Map<Object?, Object?> ? AndroidAudioDevices.fromMap(event) : AndroidAudioDevices.none,
+            )
             .asBroadcastStream()
       : const Stream.empty();
 
