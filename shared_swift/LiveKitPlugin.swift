@@ -61,6 +61,14 @@ public class LiveKitPlugin: NSObject, FlutterPlugin {
     // second Flutter engine does not wipe the pushed policy / management mode.
     private static var sharedAudioEngineObserver: LKAudioEngineObserver?
 
+    #if !os(macOS)
+    // AVAudioSession calls that change the session are synchronous XPC round
+    // trips to the audio server, which take up to a second each during a call.
+    // They run here, in the order Dart sent them, so the platform thread never
+    // waits on one.
+    static let audioSessionQueue = DispatchQueue(label: "io.livekit.audio-session", qos: .userInitiated)
+    #endif
+
     #if os(iOS)
     var cancellable = Set<AnyCancellable>()
     #endif
@@ -385,11 +393,24 @@ public class LiveKitPlugin: NSObject, FlutterPlugin {
         // Apply through the observer so the category is resolved from the live
         // engine state (when category selection is enabled), matching what the
         // engine-lifecycle callbacks would apply.
-        if let error = audioEngineObserver?.applyCachedConfiguration() {
-            print("[LiveKit] Configure audio error: ", error)
-            result(FlutterError(code: "configure", message: error.localizedDescription, details: nil))
-        } else {
-            result(true)
+        let observer = audioEngineObserver
+        LiveKitPlugin.audioSessionQueue.async {
+            // The engine may have stopped while this waited its turn. Applying
+            // now would activate a session it has let go of; its next start
+            // applies the cached policy instead.
+            guard !automatic || (observer?.isSessionActive ?? false) else {
+                DispatchQueue.main.async { result(true) }
+                return
+            }
+            let error = observer?.applyCachedConfiguration()
+            DispatchQueue.main.async {
+                if let error {
+                    print("[LiveKit] Configure audio error: ", error)
+                    result(FlutterError(code: "configure", message: error.localizedDescription, details: nil))
+                } else {
+                    result(true)
+                }
+            }
         }
         #endif
     }
@@ -409,14 +430,58 @@ public class LiveKitPlugin: NSObject, FlutterPlugin {
         #if os(macOS)
         result(FlutterMethodNotImplemented)
         #else
-        if let error = LiveKitPlugin.deactivateAudioSession() {
-            print("[LiveKit] Deactivate audio session error: ", error)
-            result(FlutterError(code: "deactivateAudioSession", message: error.localizedDescription, details: nil))
-        } else {
-            result(true)
+        LiveKitPlugin.audioSessionQueue.async {
+            let error = LiveKitPlugin.deactivateAudioSession()
+            DispatchQueue.main.async {
+                if let error {
+                    print("[LiveKit] Deactivate audio session error: ", error)
+                    result(FlutterError(code: "deactivateAudioSession", message: error.localizedDescription, details: nil))
+                } else {
+                    result(true)
+                }
+            }
         }
         #endif
     }
+
+    #if os(iOS)
+    /// The session's category, the ports it plays to, and the inputs it could
+    /// record from.
+    public func handleGetAppleAudioRoute(result: @escaping FlutterResult) {
+        LiveKitPlugin.audioSessionQueue.async {
+            let session = AVAudioSession.sharedInstance()
+            let route: [String: Any] = [
+                "category": session.category.rawValue,
+                "outputs": session.currentRoute.outputs.map(LiveKitPlugin.encodePort),
+                "inputs": (session.availableInputs ?? []).map(LiveKitPlugin.encodePort),
+            ]
+            DispatchQueue.main.async { result(route) }
+        }
+    }
+
+    /// Prefers the available input of `uid`. None, or one no longer available,
+    /// drops the preferred input. A headset's output comes along with it; the
+    /// built-in microphone's does not on every iOS version.
+    public func handleSetAppleAudioPreferredInput(args: [String: Any?], result: @escaping FlutterResult) {
+        let uid = args["uid"] as? String
+        LiveKitPlugin.audioSessionQueue.async {
+            let session = AVAudioSession.sharedInstance()
+            let input = uid.flatMap { uid in session.availableInputs?.first { $0.uid == uid } }
+            do {
+                try session.setPreferredInput(input)
+                DispatchQueue.main.async { result(nil) }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "setPreferredInput", message: error.localizedDescription, details: nil))
+                }
+            }
+        }
+    }
+
+    private static func encodePort(_ port: AVAudioSessionPortDescription) -> [String: String] {
+        ["type": port.portType.rawValue, "uid": port.uid, "name": port.portName]
+    }
+    #endif
 
     private static let processInfo = ProcessInfo()
 
@@ -834,6 +899,10 @@ public class LiveKitPlugin: NSObject, FlutterPlugin {
         case "osVersionString":
             result(LiveKitPlugin.osVersionString())
         #if os(iOS)
+        case "getAppleAudioRoute":
+            handleGetAppleAudioRoute(result: result)
+        case "setAppleAudioPreferredInput":
+            handleSetAppleAudioPreferredInput(args: args, result: result)
         case "broadcastRequestActivation":
             BroadcastManager.shared.requestActivation()
             result(true)
