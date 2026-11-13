@@ -23,6 +23,7 @@ import '../support/native.dart';
 import '../support/platform.dart';
 import 'android_audio_device.dart';
 import 'android_audio_session_adapter.dart';
+import 'apple_audio_route.dart';
 import 'audio_engine_availability.dart';
 import 'audio_engine_error.dart';
 import 'audio_processing_state.dart';
@@ -132,6 +133,25 @@ class AudioManager {
   Future<void> selectAndroidAudioDevice(AndroidAudioDevice device) async {
     if (!lkPlatformIs(PlatformType.android)) return;
     await Native.selectAndroidAudioDevice(device.type.name, name: device.name);
+  }
+
+  /// The iOS audio session's category, outputs and available inputs. Read off
+  /// the platform thread, as the session answers over XPC. Empty elsewhere.
+  Future<AppleAudioRoute> getAppleAudioRoute() async {
+    if (!lkPlatformIs(PlatformType.iOS)) return AppleAudioRoute.none;
+    final raw = await Native.getAppleAudioRoute();
+    return raw == null ? AppleAudioRoute.none : AppleAudioRoute.fromMap(raw);
+  }
+
+  /// Prefers the iOS audio session input of [uid]; null, or an input no longer
+  /// available, drops the preferred one. A headset's output comes along with
+  /// its input. The built-in microphone's does not on every iOS version: on
+  /// 26.5 the output stays on a connected Bluetooth headset.
+  /// Runs off the platform thread, in order with the session configuration
+  /// [setSpeakerOutputPreferred] applies. iOS only.
+  Future<void> setAppleAudioPreferredInput(String? uid) async {
+    if (!lkPlatformIs(PlatformType.iOS)) return;
+    await Native.setAppleAudioPreferredInput(uid);
   }
 
   /// The current audio engine state, derived from native engine lifecycle

@@ -204,6 +204,23 @@ class Native {
     }
   }
 
+  /// The iOS audio session's route, as the native side encodes it. Null when
+  /// the call fails.
+  @internal
+  static Future<Map<Object?, Object?>?> getAppleAudioRoute() async {
+    try {
+      return await channel.invokeMethod<Map<Object?, Object?>>('getAppleAudioRoute', <String, dynamic>{});
+    } catch (error) {
+      logger.warning('getAppleAudioRoute did throw $error');
+      return null;
+    }
+  }
+
+  /// Prefers the iOS audio session input of [uid], or none.
+  @internal
+  static Future<void> setAppleAudioPreferredInput(String? uid) =>
+      channel.invokeMethod<void>('setAppleAudioPreferredInput', <String, dynamic>{'uid': uid});
+
   /// The devices LiveKit's Android audio session offers, as the native side
   /// encodes them. Null when the call fails.
   @internal
