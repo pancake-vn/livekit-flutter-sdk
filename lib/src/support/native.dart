@@ -289,6 +289,17 @@ class Native {
     );
   }
 
+  /// Sets whether the audio device module may use Apple's Voice Processing
+  /// I/O (macOS). Errors propagate: a caller that disallowed it must not be
+  /// left believing software processing is in effect when it is not.
+  @internal
+  static Future<void> setPlatformVoiceProcessingAllowed(bool allowed) async {
+    await channel.invokeMethod<void>(
+      'setPlatformVoiceProcessingAllowed',
+      <String, dynamic>{'allowed': allowed},
+    );
+  }
+
   /// Reads the audio device module's microphone mute mode (iOS/macOS).
   /// Returns null when the native side cannot provide it.
   @internal

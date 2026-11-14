@@ -714,6 +714,33 @@ public class LiveKitPlugin: NSObject, FlutterPlugin {
         }
     }
 
+    #if os(macOS)
+    public func handleSetPlatformVoiceProcessingAllowed(args: [String: Any?], result: @escaping FlutterResult) {
+        guard let allowed = args["allowed"] as? Bool else {
+            result(FlutterError(code: "setPlatformVoiceProcessingAllowed", message: "allowed is required", details: nil))
+            return
+        }
+
+        guard let adm = FlutterWebRTCPlugin.sharedSingleton()?.peerConnectionFactory?.audioDeviceModule else {
+            result(FlutterError(code: "setPlatformVoiceProcessingAllowed", message: "audio device module is unavailable", details: nil))
+            return
+        }
+
+        // Changing it while recording rebuilds the audio engine.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let admResult = adm.setPlatformVoiceProcessingAllowed(allowed)
+            DispatchQueue.main.async {
+                if admResult == 0 {
+                    result(nil)
+                } else {
+                    result(LiveKitPlugin.flutterError(forAudioEngineResult: admResult,
+                                                      fallbackCode: "setPlatformVoiceProcessingAllowed"))
+                }
+            }
+        }
+    }
+    #endif
+
     public func handleGetMicrophoneMuteMode(result: @escaping FlutterResult) {
         guard let adm = FlutterWebRTCPlugin.sharedSingleton()?.peerConnectionFactory?.audioDeviceModule else {
             result(FlutterError(code: "getMicrophoneMuteMode", message: "audio device module is unavailable", details: nil))
@@ -884,6 +911,10 @@ public class LiveKitPlugin: NSObject, FlutterPlugin {
             handleSetMicrophoneMuteMode(args: args, result: result)
         case "getMicrophoneMuteMode":
             handleGetMicrophoneMuteMode(result: result)
+        #if os(macOS)
+        case "setPlatformVoiceProcessingAllowed":
+            handleSetPlatformVoiceProcessingAllowed(args: args, result: result)
+        #endif
         case "startLocalRecording":
             handleStartLocalRecording(args: args, result: result)
         case "stopLocalRecording":

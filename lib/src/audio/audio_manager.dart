@@ -514,6 +514,21 @@ class AudioManager {
     }
   }
 
+  /// Whether macOS may use Apple's Voice Processing I/O for echo
+  /// cancellation, noise suppression and gain control. No-op elsewhere.
+  ///
+  /// Disallowed, WebRTC's own processing runs instead. This is engine-wide
+  /// state and changing it while recording rebuilds the engine, so set it
+  /// before connecting. Throws if the native side rejects the change.
+  Future<void> setPlatformVoiceProcessingAllowed(bool allowed) async {
+    if (!lkPlatformIs(PlatformType.macOS)) return;
+    try {
+      await Native.setPlatformVoiceProcessingAllowed(allowed);
+    } on PlatformException catch (error) {
+      throw audioEngineExceptionFrom(error) ?? error;
+    }
+  }
+
   /// Diagnostic snapshot of the resolved audio processing state.
   ///
   /// The audio processing module is owned by the native peer connection factory
