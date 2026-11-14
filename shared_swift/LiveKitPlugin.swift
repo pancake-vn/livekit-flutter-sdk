@@ -20,6 +20,7 @@ import WebRTC
 
 #if os(macOS)
 import Cocoa
+import CoreAudio
 import FlutterMacOS
 #else
 import Combine
@@ -1263,6 +1264,9 @@ class LKAudioEngineObserver: NSObject, RTCAudioDeviceModuleDelegate {
                            isPlayoutEnabled: Bool,
                            isRecordingEnabled: Bool) -> Int {
         var resultCode = 0
+        #if os(macOS)
+        if isRecordingEnabled { BluetoothHandsFree.hold() }
+        #endif
         #if !os(macOS)
         if isPlayoutEnabled || isRecordingEnabled {
             if let error = applyManagedConfiguration(isRecordingEnabled: isRecordingEnabled) {
@@ -1285,6 +1289,9 @@ class LKAudioEngineObserver: NSObject, RTCAudioDeviceModuleDelegate {
                            isPlayoutEnabled: Bool,
                            isRecordingEnabled: Bool) -> Int {
         var resultCode = 0
+        #if os(macOS)
+        if !isRecordingEnabled { BluetoothHandsFree.letGo() }
+        #endif
         #if !os(macOS)
         if isPlayoutEnabled || isRecordingEnabled {
             // A disable event can leave one side of the engine running (for
@@ -1325,8 +1332,15 @@ class LKAudioEngineObserver: NSObject, RTCAudioDeviceModuleDelegate {
         return 0
     }
 
+    func audioDeviceModule(_: RTCAudioDeviceModule, didCreateEngine _: AVAudioEngine) -> Int {
+        #if os(macOS)
+        // A change of default device rebuilds the engine without enabling it again.
+        BluetoothHandsFree.engineCreated()
+        #endif
+        return 0
+    }
+
     // Remaining callbacks are not needed for session management (proceed / no-op).
-    func audioDeviceModule(_: RTCAudioDeviceModule, didCreateEngine _: AVAudioEngine) -> Int { 0 }
     func audioDeviceModule(_: RTCAudioDeviceModule, willStartEngine _: AVAudioEngine, isPlayoutEnabled _: Bool, isRecordingEnabled _: Bool) -> Int { 0 }
     func audioDeviceModule(_: RTCAudioDeviceModule, didStopEngine _: AVAudioEngine, isPlayoutEnabled _: Bool, isRecordingEnabled _: Bool) -> Int { 0 }
     func audioDeviceModule(_: RTCAudioDeviceModule, engine _: AVAudioEngine, configureInputFromSource _: AVAudioNode?, toDestination _: AVAudioNode, format _: AVAudioFormat, context _: [AnyHashable: Any]) -> Int { 0 }
@@ -1360,6 +1374,137 @@ private enum RetiredAudioEngines {
         queue.asyncAfter(deadline: .now() + .seconds(10)) {
             withExtendedLifetime(engine) {}
         }
+    }
+}
+
+/// Holds an input open on a Bluetooth headset from before the engine starts.
+/// Otherwise the headset moves to hands-free under the running engine, which
+/// stops it, and the rebuild that follows drops the headset back to A2DP.
+private enum BluetoothHandsFree {
+    private static let queue = DispatchQueue(label: "io.livekit.bluetooth-hands-free")
+    private static let settleTimeout: TimeInterval = 1.5
+    // An engine rebuild stops recording and starts it again within this.
+    private static let releaseDelay: TimeInterval = 1
+
+    private static var isRecording = false
+    private static var held: (device: AudioDeviceID, proc: AudioDeviceIOProcID)?
+    private static var release: DispatchWorkItem?
+
+    /// Returns once the headset is on hands-free, or after `settleTimeout`.
+    static func hold() {
+        queue.sync {
+            isRecording = true
+            follow()
+        }
+    }
+
+    static func engineCreated() {
+        queue.sync {
+            if isRecording { follow() }
+        }
+    }
+
+    static func letGo() {
+        queue.sync {
+            isRecording = false
+            release?.cancel()
+            let release = DispatchWorkItem { stop() }
+            self.release = release
+            queue.asyncAfter(deadline: .now() + releaseDelay, execute: release)
+        }
+    }
+
+    private static func follow() {
+        release?.cancel()
+        release = nil
+
+        let input = defaultInputDevice()
+        if let held, held.device == input { return }
+        stop()
+
+        guard let input, isBluetooth(input) else { return }
+        var proc: AudioDeviceIOProcID?
+        guard AudioDeviceCreateIOProcIDWithBlock(&proc, input, nil, { _, _, _, _, _ in }) == noErr, let proc else { return }
+        guard AudioDeviceStart(input, proc) == noErr else {
+            AudioDeviceDestroyIOProcID(input, proc)
+            return
+        }
+        held = (input, proc)
+
+        guard let output = outputSibling(of: input) else { return }
+        let startedAt = Date()
+        while channelCount(of: output) > 1, Date().timeIntervalSince(startedAt) < settleTimeout {
+            usleep(20000)
+        }
+        NSLog("[LiveKit] Bluetooth hands-free held after %ld ms", Int(Date().timeIntervalSince(startedAt) * 1000))
+    }
+
+    private static func stop() {
+        guard let held else { return }
+        AudioDeviceStop(held.device, held.proc)
+        AudioDeviceDestroyIOProcID(held.device, held.proc)
+        self.held = nil
+    }
+
+    private static func defaultInputDevice() -> AudioDeviceID? {
+        var device = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = self.address(kAudioHardwarePropertyDefaultInputDevice)
+        let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
+        return status == noErr && device != kAudioObjectUnknown ? device : nil
+    }
+
+    private static func isBluetooth(_ device: AudioDeviceID) -> Bool {
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var address = self.address(kAudioDevicePropertyTransportType)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport) == noErr else { return false }
+        return transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
+    }
+
+    /// macOS lists a headset as two devices whose uids differ after the last colon.
+    private static func outputSibling(of input: AudioDeviceID) -> AudioDeviceID? {
+        guard let inputUid = uid(of: input), let colon = inputUid.lastIndex(of: ":") else { return nil }
+        let headset = inputUid[...colon]
+
+        var address = self.address(kAudioHardwarePropertyDevices)
+        var size: UInt32 = 0
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return nil }
+        var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &devices) == noErr else { return nil }
+
+        return devices.first { device in
+            device != input && channelCount(of: device) > 0 && uid(of: device)?.hasPrefix(headset) == true
+        }
+    }
+
+    private static func uid(of device: AudioDeviceID) -> String? {
+        var uid: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        var address = self.address(kAudioDevicePropertyDeviceUID)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &uid) == noErr else { return nil }
+        return uid?.takeRetainedValue() as String?
+    }
+
+    /// Output channels: two on A2DP, one on hands-free.
+    private static func channelCount(of device: AudioDeviceID) -> Int {
+        var address = self.address(kAudioDevicePropertyStreamConfiguration, scope: kAudioObjectPropertyScopeOutput)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr, size > 0 else { return 0 }
+
+        let buffers = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { buffers.deallocate() }
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, buffers) == noErr else { return 0 }
+
+        let list = UnsafeMutableAudioBufferListPointer(buffers.assumingMemoryBound(to: AudioBufferList.self))
+        return list.reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
+    private static func address(_ selector: AudioObjectPropertySelector,
+                                scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
+        // Element 0 is `kAudioObjectPropertyElementMain`, which needs macOS 12.
+        AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: 0)
     }
 }
 #endif
