@@ -1670,7 +1670,7 @@ extension EngineInternalMethods on Engine {
     if (encodings != null) {
       transceiverInit.sendEncodings = encodings;
     }
-    final transceiver = await publisher!.pc.addTransceiver(
+    final transceiver = await publisher!.addTransceiver(
       track: track.mediaStreamTrack,
       kind: track is LocalVideoTrack
           ? rtc.RTCRtpMediaType.RTCRtpMediaTypeVideo
@@ -1701,7 +1701,7 @@ extension EngineInternalMethods on Engine {
     if (encodings != null) {
       transceiverInit.sendEncodings = encodings;
     }
-    final transceiver = await publisher!.pc.addTransceiver(
+    final transceiver = await publisher!.addTransceiver(
       track: simulcastTrack.mediaStreamTrack,
       kind: rtc.RTCRtpMediaType.RTCRtpMediaTypeVideo,
       init: transceiverInit,
