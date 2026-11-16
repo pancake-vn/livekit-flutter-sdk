@@ -34,6 +34,7 @@ export 'src/extensions.dart' show ClientProtocolVersionExt, WidgetsBindingCompat
 export 'src/hardware/hardware.dart';
 export 'src/livekit.dart';
 export 'src/logger.dart';
+export 'src/managers/broadcast_manager.dart';
 export 'src/managers/event.dart';
 export 'src/options.dart';
 export 'src/agent/agent.dart';
