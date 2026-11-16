@@ -216,7 +216,7 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
           sendEncodings: encodings,
         );
         // addTransceiver cannot pass in a kind parameter due to a bug in flutter-webrtc (web)
-        track.transceiver = await room.engine.publisher?.pc.addTransceiver(
+        track.transceiver = await room.engine.publisher?.addTransceiver(
           track: track.mediaStreamTrack,
           kind: rtc.RTCRtpMediaType.RTCRtpMediaTypeAudio,
           init: transceiverInit,
@@ -483,7 +483,7 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
 
       logger.fine('publishVideoTrack publisher: ${room.engine.publisher}');
 
-      track.transceiver = await room.engine.publisher?.pc.addTransceiver(
+      track.transceiver = await room.engine.publisher?.addTransceiver(
         track: track.mediaStreamTrack,
         kind: rtc.RTCRtpMediaType.RTCRtpMediaTypeVideo,
         init: transceiverInit,

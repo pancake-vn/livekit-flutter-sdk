@@ -115,6 +115,22 @@ class Transport extends Disposable {
     return Transport._(pc, connectOptions);
   }
 
+  /// Adds a transceiver to the peer connection.
+  ///
+  /// Throws once the transport is being disposed, as when a publish is still under way while the room
+  /// disconnects: WebRTC frees a closed peer connection's call, and adding a transceiver to it afterwards
+  /// crashes the process.
+  Future<rtc.RTCRtpTransceiver> addTransceiver({
+    required rtc.MediaStreamTrack track,
+    required rtc.RTCRtpMediaType kind,
+    required rtc.RTCRtpTransceiverInit init,
+  }) async {
+    if (isDisposed) {
+      throw UnexpectedConnectionState('[$objectId] addTransceiver() already disposed');
+    }
+    return pc.addTransceiver(track: track, kind: kind, init: init);
+  }
+
   late final negotiate = Utils.createDebounceFunc(
     (void _) => createAndSendOffer(),
     cancelFunc: (f) => _cancelDebounce = f,
