@@ -144,9 +144,10 @@ class LocalParticipant extends Participant<LocalTrackPublication> {
 
   /// Handle broadcast state change (iOS only)
   void _broadcastStateChanged() {
-    final isEnabled = BroadcastManager().isBroadcasting && BroadcastManager().shouldPublishTrack;
+    // The app publishes the share itself, so a change must not unpublish it behind the app's back.
+    if (!BroadcastManager().shouldPublishTrack) return;
     // Listener must stay sync (void), so use unawaited here.
-    unawaited(setScreenShareEnabled(isEnabled));
+    unawaited(setScreenShareEnabled(BroadcastManager().isBroadcasting));
   }
 
   /// Publish an [AudioTrack] to the [Room].
