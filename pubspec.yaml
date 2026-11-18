@@ -17,6 +17,8 @@ description: Flutter Client SDK for LiveKit. Build real-time video and audio
   into your apps. Supports iOS, Android, and Web.
 version: 2.13.0
 homepage: https://github.com/livekit/client-sdk-flutter
+# pancake-vn's fork is consumed by git ref only, and depends on a git fork itself.
+publish_to: none
 
 # Test fixture keys for certificate pinning tests, not real secrets.
 false_secrets:
