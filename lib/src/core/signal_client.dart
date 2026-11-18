@@ -125,11 +125,6 @@ class SignalClient extends Disposable with EventsEmittable<SignalEvent> {
           _connectivityResult = result;
         }
       });
-
-      if (_connectivityResult.contains(ConnectivityResult.none)) {
-        logger.warning('no internet connection');
-        throw ConnectException('no internet connection', reason: ConnectionErrorReason.InternalError, statusCode: 503);
-      }
     }
 
     final rtcUri = await Utils.buildUri(
