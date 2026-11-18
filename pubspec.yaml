@@ -17,6 +17,8 @@ description: Flutter Client SDK for LiveKit. Build real-time video and audio
   into your apps. Supports iOS, Android, and Web.
 version: 2.13.0
 homepage: https://github.com/livekit/client-sdk-flutter
+# pancake-vn's fork is consumed by git ref only, and depends on a git fork itself.
+publish_to: none
 
 # Test fixture keys for certificate pinning tests, not real secrets.
 false_secrets:
@@ -57,7 +59,11 @@ dependencies:
   json_annotation: '>=4.9.0 <5.0.0'
 
   # Fix version to avoid version conflicts between WebRTC-SDK pods, which both this package and flutter_webrtc depend on.
-  flutter_webrtc: 1.6.2+hotfix.3
+  # pancake-vn's fork: the native plugin looks up the flutter_webrtc plugin of its own engine.
+  flutter_webrtc:
+    git:
+      url: https://github.com/pancake-vn/flutter-webrtc
+      ref: 0bcabca2e8d93352d001e0adfba3f279631f2fae
   dart_webrtc: ^1.8.0
 
 dev_dependencies:
